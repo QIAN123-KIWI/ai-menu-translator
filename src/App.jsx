@@ -80,7 +80,7 @@ export default function AIMenuTranslator() {
         window.open(`https://www.bing.com/images/search?q=${encodeURIComponent(query)}`, '_blank');
     };
 
-    // 3. AI 识别 (强制中文版)
+    // 3. AI 识别 (Gemini 1.5 Pro)
     const compressImage = (file) => {
         return new Promise((resolve) => {
             const reader = new FileReader();
@@ -109,26 +109,36 @@ export default function AIMenuTranslator() {
     
     const analyzeImageWithGemini = async (base64Image) => {
         const base64Data = base64Image.split(',')[1];
-        // ⚡️ 这里的 Prompt 已经改回强制中文！
+        
+        // ⚡️ 1.5 Pro 专用提示词：更注重准确性和描述
         const prompt = `
-            You are a professional menu translator. Analyze the menu image.
-            Extract ALL dishes. Return a JSON array.
-            For each dish object:
-            - "original": Original dish name (in original language)
-            - "translation": Chinese translation (简体中文)
-            - "pronunciation": Pronunciation (Kana/Romaji for JP, Pinyin for others)
-            - "price": numeric value
-            - "currency": "¥", "$", etc.
-            - "desc": A short, appetizing description in Chinese (max 15 words).
-            - "category": Category in Chinese (e.g. "主菜", "甜点", "饮品").
-            - "lang_code": "ja-JP", "en-US", etc.
+            You are a Michelin-star food critic and translator. 
+            Analyze the menu image carefully. Extract ALL dishes.
 
-            Return ONLY raw JSON array. No markdown.
+            Strict Translation Rules:
+            1. **No Literal Translation**: E.g., don't translate "Oyakodon" as "Parent Child Bowl", use "Chicken and Egg Rice Bowl".
+            2. **Localize**: Use appetizing Chinese (简体中文).
+            3. **Explain**: If the dish is vague, describe the main ingredients based on visual context.
+
+            Return a JSON array of objects:
+            {
+                "original": "Original Name",
+                "translation": "Chinese Name",
+                "pronunciation": "Pronunciation (Kana/Romaji/Pinyin)",
+                "price": 100,
+                "currency": "¥",
+                "desc": "A short, appetizing description in Chinese (max 20 words).",
+                "category": "Category in Chinese (e.g. 主菜, 饮品)",
+                "lang_code": "ja-JP"
+            }
+
+            Return ONLY raw JSON. No markdown block.
         `;
 
         try {
+            // ✅ 这里使用的是 gemini-1.5-pro
             const response = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`,
                 {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -146,11 +156,15 @@ export default function AIMenuTranslator() {
             if (!response.ok) throw new Error(`API Error: ${response.status}`);
             const data = await response.json();
             let text = data.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
+            
+            // 清理可能存在的 markdown 格式
             text = text.replace(/^```json\s*|```\s*$/g, '').trim();
             const first = text.indexOf('[');
             const last = text.lastIndexOf(']');
             if (first !== -1 && last !== -1) text = text.substring(first, last + 1);
+            
             return JSON.parse(text).filter(d => d.translation);
+
         } catch (error) {
             console.error("AI Error:", error);
             throw error;
@@ -161,11 +175,11 @@ export default function AIMenuTranslator() {
         const files = Array.from(e.target.files);
         if (files.length === 0) return;
         setIsScanning(true);
-        setScanStep(`准备识别...`);
+        setScanStep(`正在唤醒 AI 美食家...`); // 1.5 Pro 稍微慢一点，提示语改一下
         try {
             for (let i = 0; i < files.length; i++) {
                 const file = files[i];
-                setScanStep(`处理第 ${i + 1} 张...`);
+                setScanStep(`正在研读第 ${i + 1} 张菜单...`);
                 const compressed = await compressImage(file);
                 const results = await analyzeImageWithGemini(compressed); 
                 const newItems = results.map(dish => ({
@@ -231,7 +245,7 @@ export default function AIMenuTranslator() {
         <div className="min-h-screen bg-amber-50 text-gray-800 font-sans pb-32">
             <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept="image/*" multiple className="hidden" />
             
-            {/* Header (恢复漂亮样式) */}
+            {/* Header */}
             <div className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b-2 border-gray-900 px-4 py-3 flex justify-between items-center shadow-lg">
                 <div className="flex items-center gap-2">
                     <div className="bg-gradient-to-tr from-rose-500 to-orange-500 p-2 rounded-lg border-2 border-gray-900 shadow-[2px_2px_0_0_#444]">
@@ -258,7 +272,7 @@ export default function AIMenuTranslator() {
                         </div>
                         <div>
                             <h3 className="text-2xl font-bold text-gray-900">拍摄或上传菜单</h3>
-                            <p className="text-sm text-gray-600 mt-2">点击上方按钮，小 Qirl 为您翻译。</p>
+                            <p className="text-sm text-gray-600 mt-2">点击上方按钮，小 Qirl (Pro版) 为您翻译。</p>
                         </div>
                     </div>
                 )}
@@ -306,7 +320,7 @@ export default function AIMenuTranslator() {
                 </div>
             )}
 
-            {/* 购物车按钮 (独立浮动 + 漂亮样式) */}
+            {/* 购物车按钮 */}
             {totalQty > 0 && !showCart && (
                 <div className="fixed bottom-8 right-4 left-4 z-[90]">
                     <button 
@@ -323,7 +337,7 @@ export default function AIMenuTranslator() {
                 </div>
             )}
 
-            {/* 购物车弹窗 (全屏遮罩 + 底部弹出) */}
+            {/* 购物车弹窗 */}
             {showCart && (
                 <div className="fixed inset-0 z-[100] flex items-end justify-center">
                     <div 
