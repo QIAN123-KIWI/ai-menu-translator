@@ -35,15 +35,24 @@ import {
 	ChefHat,
 } from 'lucide-react';
 
-// --- Firebase Config & Init ---
-const firebaseConfig = JSON.parse(__firebase_config);
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 // --- API Configuration ---
 const apiKey = ""; 
+// --- Firebase Config & Init ---
+// 为了让页面先显示出来，我们先用模拟配置
+const firebaseConfig = { 
+  apiKey: "API_KEY_HERE", 
+  authDomain: "project-id.firebaseapp.com",
+  projectId: "project-id",
+  storageBucket: "project-id.appspot.com",
+  messagingSenderId: "sender-id",
+  appId: "app-id" 
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = 'default-app-id';
 
 // --- Currency Normalization Helper ---
 const normalizeCurrency = (currency) => {
