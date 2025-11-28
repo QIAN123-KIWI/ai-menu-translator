@@ -40,7 +40,6 @@ export default function AIMenuTranslator() {
     const [isScanning, setIsScanning] = useState(false);
     const [scanStep, setScanStep] = useState(''); 
     const [showCart, setShowCart] = useState(false);
-    // 新增：清空确认状态，防止误触，同时也解决了弹窗不出的问题
     const [confirmClear, setConfirmClear] = useState(false);
     
     const fileInputRef = useRef(null);
@@ -56,19 +55,16 @@ export default function AIMenuTranslator() {
 
     // --- 核心功能 ---
 
-    // 1. 改良版清空：两次点击确认
+    // 1. 改良版清空
     const handleClearClick = () => {
         if (confirmClear) {
-            // 第二次点击，执行清空
             setMenuItems([]);
             setCartItems([]);
             localStorage.removeItem('qirl_menu_items');
             localStorage.removeItem('qirl_cart_items');
             setConfirmClear(false);
         } else {
-            // 第一次点击，进入确认状态
             setConfirmClear(true);
-            // 3秒后如果不点，自动恢复
             setTimeout(() => setConfirmClear(false), 3000);
         }
     };
@@ -317,7 +313,7 @@ export default function AIMenuTranslator() {
             {/* 购物车弹窗 (全屏遮罩 + 底部弹出) */}
             {showCart && (
                 <div className="fixed inset-0 z-50 flex items-end justify-center">
-                    {/* 背景遮罩 (点击关闭) */}
+                    {/* 背景遮罩 */}
                     <div 
                         className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in"
                         onClick={() => setShowCart(false)}
@@ -340,3 +336,31 @@ export default function AIMenuTranslator() {
                         <div className="p-4 overflow-y-auto flex-1 space-y-4">
                             {cartItems.map(item => (
                                 <div key={item.menuItemId} className="flex justify-between items-center border-b border-gray-100 pb-3 last:border-0">
+                                    <div className="flex-1 pr-4">
+                                        <div className="font-bold text-gray-900">{item.translation}</div>
+                                        <div className="text-sm text-gray-500 mt-1">{item.currency}{item.price}</div>
+                                    </div>
+                                    <div className="flex items-center gap-3 bg-gray-50 p-1 rounded-lg">
+                                        <button onClick={() => removeFromCart(item.menuItemId)} className="w-8 h-8 bg-white border border-gray-200 rounded-md flex items-center justify-center shadow-sm active:scale-90 transition-transform"><Minus size={16}/></button>
+                                        <span className="font-mono font-bold w-6 text-center text-lg">{item.quantity}</span>
+                                        <button onClick={() => addToCart(item)} className="w-8 h-8 bg-orange-500 text-white rounded-md flex items-center justify-center shadow-sm active:scale-90 transition-transform"><Plus size={16}/></button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* 底部结算按钮 */}
+                        <div className="p-4 border-t bg-white shrink-0 safe-area-bottom">
+                            <button 
+                                onClick={() => {setShowCart(false); alert("下单成功！服务员很快就到！");}} 
+                                className="w-full bg-gradient-to-r from-orange-500 to-red-600 text-white font-bold py-4 rounded-xl shadow-lg active:scale-95 transition-transform text-lg"
+                            >
+                                确认下单 · {cartItems[0]?.currency}{totalPrice}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
