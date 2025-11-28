@@ -63,7 +63,7 @@ export default function AIMenuTranslator() {
 
     // --- 核心功能 ---
 
-    // 1. 清空：使用系统原生弹窗 (最稳)
+    // 1. 清空：使用系统原生弹窗
     const handleClearAll = () => {
         if (window.confirm("确定要清空所有菜单吗？")) {
             setMenuItems([]);
@@ -80,7 +80,7 @@ export default function AIMenuTranslator() {
         window.open(`https://www.bing.com/images/search?q=${encodeURIComponent(query)}`, '_blank');
     };
 
-    // 3. AI 识别 (回归最强稳定版 Gemini 1.5 Pro)
+    // 3. AI 识别 (Gemini 2.0 Flash Experimental)
     const compressImage = (file) => {
         return new Promise((resolve) => {
             const reader = new FileReader();
@@ -110,25 +110,25 @@ export default function AIMenuTranslator() {
     const analyzeImageWithGemini = async (base64Image) => {
         const base64Data = base64Image.split(',')[1];
         
-        // 🔥 1.5 Pro 专用高级提示词：强制中文，不做直译
+        // Gemini 2.0 Flash 专用提示词
         const prompt = `
-            You are a Michelin-star food critic translator. 
+            You are a Michelin-star food critic and translator. 
             Analyze the menu image. Extract ALL dishes.
-
-            Translation Rules:
-            1. **Target Language**: Simplified Chinese (简体中文).
-            2. **Style**: Appetizing and professional (e.g., "Oyakodon" -> "亲子丼" or "滑蛋鸡肉饭", NOT "父母孩子碗").
-            3. **Explanation**: Briefly describe ingredients if the name is abstract.
+            
+            Translate rules:
+            1. DO NOT translate literally (e.g., "Oyakodon" -> "Chicken and Egg Rice Bowl", NOT "Parent Child Bowl").
+            2. Use appetizing, professional Chinese (简体中文).
+            3. If the dish name is vague, describe the main ingredients based on the image visual context.
 
             Return JSON array:
             [
               {
-                "original": "Dish Name",
-                "translation": "Chinese Name",
+                "original": "Dish Name in local language",
+                "translation": "Appetizing Chinese Name",
                 "pronunciation": "Pronunciation",
                 "price": 100,
                 "currency": "¥",
-                "desc": "Short description",
+                "desc": "One sentence description of taste/ingredients in Chinese",
                 "category": "Category (e.g. 主菜)",
                 "lang_code": "ja-JP"
               }
@@ -137,9 +137,9 @@ export default function AIMenuTranslator() {
         `;
 
         try {
-            // ✅ 修复：改回 gemini-1.5-pro，这是最稳定的版本，不会 404
+            // ✅ 使用 gemini-2.0-flash-exp (速度最快)
             const response = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`,
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`,
                 {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -175,11 +175,11 @@ export default function AIMenuTranslator() {
         const files = Array.from(e.target.files);
         if (files.length === 0) return;
         setIsScanning(true);
-        setScanStep(`正在唤醒 AI 美食家...`); 
+        setScanStep(`正在呼叫 Gemini 2.0...`); 
         try {
             for (let i = 0; i < files.length; i++) {
                 const file = files[i];
-                setScanStep(`正在研读第 ${i + 1} 张菜单...`);
+                setScanStep(`处理第 ${i + 1} 张...`);
                 const compressed = await compressImage(file);
                 const results = await analyzeImageWithGemini(compressed); 
                 const newItems = results.map(dish => ({
@@ -245,7 +245,7 @@ export default function AIMenuTranslator() {
         <div className="min-h-screen bg-amber-50 text-gray-800 font-sans pb-32">
             <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept="image/*" multiple className="hidden" />
             
-            {/* Header (漂亮UI) */}
+            {/* Header */}
             <div className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b-2 border-gray-900 px-4 py-3 flex justify-between items-center shadow-lg">
                 <div className="flex items-center gap-2">
                     <div className="bg-gradient-to-tr from-rose-500 to-orange-500 p-2 rounded-lg border-2 border-gray-900 shadow-[2px_2px_0_0_#444]">
@@ -272,7 +272,7 @@ export default function AIMenuTranslator() {
                         </div>
                         <div>
                             <h3 className="text-2xl font-bold text-gray-900">拍摄或上传菜单</h3>
-                            <p className="text-sm text-gray-600 mt-2">点击上方按钮，小 Qirl (Pro版) 为您翻译。</p>
+                            <p className="text-sm text-gray-600 mt-2">点击上方按钮，小 Qirl 为您翻译。</p>
                         </div>
                     </div>
                 )}
@@ -320,7 +320,7 @@ export default function AIMenuTranslator() {
                 </div>
             )}
 
-            {/* 购物车按钮 (手机修复版) */}
+            {/* 购物车按钮 */}
             {totalQty > 0 && !showCart && (
                 <div className="fixed bottom-8 right-4 left-4 z-[90]">
                     <button 
