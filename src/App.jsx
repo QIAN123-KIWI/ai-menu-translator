@@ -1,11 +1,10 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
-    Camera, ShoppingBag, Volume2, Trash2, Plus, Minus, 
-    UtensilsCrossed, Search, Zap, BookMarked, X, ImagePlus, 
-    Loader2, ListRestart, ChefHat
+    ShoppingBag, Volume2, Plus, Minus, 
+    ListRestart, ChefHat, ImagePlus, Loader2, Search, X
 } from 'lucide-react';
 
-// --- ✅ API Key 已配置 ---
+// --- ✅ API Key (保持不变) ---
 const apiKey = "AIzaSyBmEZeUw9iafS9sWwrf8l8gM4xgf43VFiM"; 
 
 // --- 辅助函数 ---
@@ -18,69 +17,70 @@ const normalizeCurrency = (currency) => {
     return currency;
 };
 
-const formatPronunciation = (pronunciation) => {
-    if (!pronunciation) return null;
-    const regex = /(.*?)\s*\((.*?)\)/;
-    const match = pronunciation.match(regex);
-    let kana = pronunciation;
-    let romaji = null;
-    if (match && match.length === 3) {
-        kana = match[1].trim();
-        romaji = match[2].trim();
-    }
-    let formattedRomaji = null;
-    if (romaji) {
-        const parts = romaji.split(/\s+/).filter(p => p.length > 0);
-        formattedRomaji = parts.join(' ');
-    }
-    return { kana, formattedRomaji };
-};
-
 const cleanCategoryName = (category) => {
     if (!category) return '';
     return category.replace(/\s*\([^)]*\)/g, '').trim();
 };
 
 export default function AIMenuTranslator() {
-    // 移除 Firebase 相关状态，改为本地状态
-    const [menuItems, setMenuItems] = useState([]);
-    const [cartItems, setCartItems] = useState([]);
+    // --- 状态管理 ---
+    const [menuItems, setMenuItems] = useState(() => {
+        try {
+            const saved = localStorage.getItem('qirl_menu_items');
+            return saved ? JSON.parse(saved) : [];
+        } catch (e) { return []; }
+    });
+    const [cartItems, setCartItems] = useState(() => {
+        try {
+            const saved = localStorage.getItem('qirl_cart_items');
+            return saved ? JSON.parse(saved) : [];
+        } catch (e) { return []; }
+    });
+
     const [isScanning, setIsScanning] = useState(false);
     const [scanStep, setScanStep] = useState(''); 
     const [showCart, setShowCart] = useState(false);
+    // 新增：清空确认状态，防止误触，同时也解决了弹窗不出的问题
+    const [confirmClear, setConfirmClear] = useState(false);
+    
     const fileInputRef = useRef(null);
-    const [showClearConfirmation, setShowClearConfirmation] = useState(false);
-    const [toastMessage, setToastMessage] = useState('');
 
-    // Toast 自动消失
-    React.useEffect(() => {
-        if (toastMessage) {
-            const timer = setTimeout(() => setToastMessage(''), 5000);
-            return () => clearTimeout(timer);
+    // --- 持久化存储 ---
+    useEffect(() => {
+        localStorage.setItem('qirl_menu_items', JSON.stringify(menuItems));
+    }, [menuItems]);
+
+    useEffect(() => {
+        localStorage.setItem('qirl_cart_items', JSON.stringify(cartItems));
+    }, [cartItems]);
+
+    // --- 核心功能 ---
+
+    // 1. 改良版清空：两次点击确认
+    const handleClearClick = () => {
+        if (confirmClear) {
+            // 第二次点击，执行清空
+            setMenuItems([]);
+            setCartItems([]);
+            localStorage.removeItem('qirl_menu_items');
+            localStorage.removeItem('qirl_cart_items');
+            setConfirmClear(false);
+        } else {
+            // 第一次点击，进入确认状态
+            setConfirmClear(true);
+            // 3秒后如果不点，自动恢复
+            setTimeout(() => setConfirmClear(false), 3000);
         }
-    }, [toastMessage]);
-
-    // --- 数据分组 ---
-    const groupItemsByCategory = (items) => {
-        const grouped = items.reduce((acc, item) => {
-            const category = item.category && item.category.trim() !== '' ? item.category : '未分类';
-            if (!acc[category]) acc[category] = [];
-            acc[category].push(item);
-            return acc;
-        }, {});
-        
-        const sortedKeys = Object.keys(grouped).sort((a, b) => {
-            const aIsMain = a.includes('主菜') || a.includes('烧鸟') || a.includes('寿司');
-            const bIsMain = b.includes('主菜') || b.includes('烧鸟') || b.includes('寿司');
-            if (aIsMain && !bIsMain) return -1;
-            if (!aIsMain && bIsMain) return 1;
-            return a.localeCompare(b);
-        });
-        
-        return sortedKeys.map(key => ({ category: key, items: grouped[key] }));
     };
 
-    // --- 图像处理与 AI ---
+    // 2. 查看详情
+    const handleSearchDish = (item) => {
+        const query = `${item.original} ${item.translation} food`;
+        const url = `https://www.bing.com/images/search?q=${encodeURIComponent(query)}`;
+        window.open(url, '_blank');
+    };
+
+    // 3. AI 识别
     const compressImage = (file) => {
         return new Promise((resolve) => {
             const reader = new FileReader();
@@ -90,7 +90,7 @@ export default function AIMenuTranslator() {
                 img.src = event.target.result;
                 img.onload = () => {
                     const canvas = document.createElement('canvas');
-                    const MAX_WIDTH = 1024; 
+                    const MAX_WIDTH = 800; 
                     let width = img.width;
                     let height = img.height;
                     if (width > MAX_WIDTH) {
@@ -101,7 +101,7 @@ export default function AIMenuTranslator() {
                     canvas.height = height;
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(img, 0, 0, width, height);
-                    resolve(canvas.toDataURL('image/jpeg', 0.7));
+                    resolve(canvas.toDataURL('image/jpeg', 0.6));
                 };
             };
         });
@@ -110,23 +110,21 @@ export default function AIMenuTranslator() {
     const analyzeImageWithGemini = async (base64Image) => {
         const base64Data = base64Image.split(',')[1];
         const prompt = `
-            You are an expert menu translator and food critic. Your task is to analyze the menu image and extract dish details.
-            Identify ALL distinct dishes. For each dish, return a JSON object with:
-            - "original": Original name
-            - "translation": Appetizing Chinese translation
-            - "pronunciation": Pronunciation guide (Kana + Romaji for Japanese)
-            - "lang_code": ISO 639-1 code (e.g., 'ja-JP')
-            - "price": Numeric price
-            - "currency": Currency symbol (e.g. ¥)
-            - "desc": Short appetizing description in Chinese
-            - "calories": Estimated calories (numeric)
-            - "category": General category (e.g., 主菜, 饮品) in Chinese
-
-            Return ONLY a raw JSON array.
+            Identify dishes from the menu image. Return a JSON array with objects:
+            {
+                "original": "Dish Name",
+                "translation": "Chinese Name",
+                "pronunciation": "Pronunciation",
+                "price": 100,
+                "currency": "¥",
+                "desc": "Short description in Chinese",
+                "category": "Category in Chinese",
+                "lang_code": "ja-JP"
+            }
+            Return ONLY raw JSON.
         `;
 
         try {
-            // 使用 Gemini 2.0 Flash 模型，速度更快
             const response = await fetch(
                 `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
                 {
@@ -144,19 +142,13 @@ export default function AIMenuTranslator() {
             );
 
             if (!response.ok) throw new Error(`API Error: ${response.status}`);
-            
             const data = await response.json();
-            const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-            
-            let cleanedText = text.replace(/^```json\s*|```\s*$/g, '').trim();
-            const firstBracket = cleanedText.indexOf('[');
-            const lastBracket = cleanedText.lastIndexOf(']');
-            if (firstBracket !== -1 && lastBracket !== -1) {
-                cleanedText = cleanedText.substring(firstBracket, lastBracket + 1);
-            }
-            
-            return JSON.parse(cleanedText).filter(dish => dish.translation);
-
+            let text = data.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
+            text = text.replace(/^```json\s*|```\s*$/g, '').trim();
+            const first = text.indexOf('[');
+            const last = text.lastIndexOf(']');
+            if (first !== -1 && last !== -1) text = text.substring(first, last + 1);
+            return JSON.parse(text).filter(d => d.translation);
         } catch (error) {
             console.error("AI Error:", error);
             throw error;
@@ -166,146 +158,128 @@ export default function AIMenuTranslator() {
     const handleFileSelect = async (e) => {
         const files = Array.from(e.target.files);
         if (files.length === 0) return;
-        
         setIsScanning(true);
-        setScanStep(`准备处理 ${files.length} 张图片...`);
-
+        setScanStep(`准备处理...`);
         try {
             for (let i = 0; i < files.length; i++) {
                 const file = files[i];
-                setScanStep(`[${i + 1}/${files.length}] 正在压缩...`);
-                const compressedBase64 = await compressImage(file);
-                
-                setScanStep(`[${i + 1}/${files.length}] AI 正在识别...`);
-                const aiResults = await analyzeImageWithGemini(compressedBase64); 
-                
-                // 本地添加数据
-                const newItems = aiResults.map(dish => ({
+                setScanStep(`处理第 ${i + 1} 张...`);
+                const compressed = await compressImage(file);
+                const results = await analyzeImageWithGemini(compressed); 
+                const newItems = results.map(dish => ({
                     id: Date.now() + Math.random().toString(36).substr(2, 9),
                     ...dish,
                     currency: normalizeCurrency(dish.currency),
-                    timestamp: Date.now(),
-                    category: dish.category || '未分类',
-                    calories: parseInt(dish.calories) || 0
+                    category: dish.category || '未分类'
                 }));
-
                 setMenuItems(prev => [...prev, ...newItems]);
-                setToastMessage(`成功识别 ${newItems.length} 道菜品！`);
             }
         } catch (error) {
-            console.error("Scan failed", error);
-            setToastMessage(`识别失败: ${error.message}`);
+            alert("识别失败，请重试");
         } finally {
             setIsScanning(false);
-            setScanStep('');
             if (fileInputRef.current) fileInputRef.current.value = '';
         }
     };
 
-    const triggerFileInput = () => fileInputRef.current?.click();
-
-    // --- 购物车逻辑 (本地) ---
+    // --- 购物车逻辑 ---
     const addToCart = (item) => {
+        if (navigator.vibrate) navigator.vibrate(50);
         setCartItems(prev => {
             const existing = prev.find(i => i.menuItemId === item.id);
             if (existing) {
                 return prev.map(i => i.menuItemId === item.id ? { ...i, quantity: i.quantity + 1 } : i);
             }
-            return [...prev, {
-                id: Date.now() + Math.random(),
-                menuItemId: item.id,
-                name: item.translation,
-                originalName: item.original,
-                pronunciation: item.pronunciation,
-                price: item.price,
-                currency: item.currency,
-                quantity: 1
-            }];
+            return [...prev, { ...item, menuItemId: item.id, quantity: 1 }];
         });
-        setToastMessage("已加入订单");
     };
 
-    const clearAllItems = () => {
-        setMenuItems([]);
-        setCartItems([]);
-        setShowClearConfirmation(false);
-        setToastMessage("已清空");
+    const removeFromCart = (itemId) => {
+        setCartItems(prev => prev.reduce((acc, item) => {
+            if (item.menuItemId === itemId) {
+                if (item.quantity > 1) acc.push({ ...item, quantity: item.quantity - 1 });
+            } else {
+                acc.push(item);
+            }
+            return acc;
+        }, []));
     };
 
-    const playAudio = (text, langCode) => {
-        if (!('speechSynthesis' in window)) return;
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = 0.8;
-        utterance.lang = langCode || 'ja-JP';
-        window.speechSynthesis.cancel();
-        window.speechSynthesis.speak(utterance);
+    const playAudio = (text, lang) => {
+        if (!window.speechSynthesis) return;
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = lang || 'ja-JP';
+        window.speechSynthesis.speak(u);
     };
 
-    // --- 渲染 ---
-    const categorizedItems = groupItemsByCategory(menuItems);
-    const totalCartItems = cartItems.reduce((acc, item) => acc + item.quantity, 0);
-    const currencySymbol = cartItems.length > 0 ? cartItems[0].currency : '¥';
-    const totalPrice = cartItems.reduce((acc, item) => acc + (item.price * item.quantity), 0); 
+    // --- 渲染准备 ---
+    const grouped = menuItems.reduce((acc, item) => {
+        const cat = item.category || '未分类';
+        if (!acc[cat]) acc[cat] = [];
+        acc[cat].push(item);
+        return acc;
+    }, {});
+    
+    const totalQty = cartItems.reduce((a, c) => a + c.quantity, 0);
+    const totalPrice = cartItems.reduce((a, c) => a + (c.price * c.quantity), 0);
 
     return (
-        <div className="min-h-screen bg-amber-50 text-gray-800 font-sans pb-28 relative overflow-hidden">
+        <div className="min-h-screen bg-stone-50 text-gray-800 font-sans pb-32">
             <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept="image/*" multiple className="hidden" />
             
-            {/* Header */}
-            <div className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b-2 border-gray-900 px-4 py-3 flex justify-between items-center shadow-lg">
-                <div className="flex items-center gap-2">
-                    <div className="bg-gradient-to-tr from-rose-500 to-orange-500 p-2 rounded-lg border-2 border-gray-900 shadow-[2px_2px_0_0_#444]">
-                        <ChefHat size={20} className="text-white" />
-                    </div>
-                    <h1 className="text-xl font-extrabold text-gray-900 tracking-wider">食神 Qirl</h1>
+            {/* 顶部导航 */}
+            <div className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-gray-200 px-4 py-3 flex justify-between items-center shadow-sm">
+                <div className="flex items-center gap-2 font-black text-xl text-gray-900">
+                    <div className="bg-orange-500 text-white p-1.5 rounded-lg"><ChefHat size={20}/></div>
+                    食神 Qirl
                 </div>
-                <div className="flex items-center gap-3">
-                    {menuItems.length > 0 && (
-                        <button onClick={() => setShowClearConfirmation(true)} className="text-xs text-gray-700 hover:text-red-600 px-2 py-1 flex items-center gap-1 border-2 border-gray-900 rounded-lg shadow-[2px_2px_0_0_#444]">
-                            <ListRestart size={14} /> 清空
-                        </button>
-                    )}
-                </div>
+                {menuItems.length > 0 && (
+                    <button 
+                        onClick={handleClearClick}
+                        className={`text-sm font-bold px-4 py-2 rounded-full transition-all active:scale-95 border-2 ${
+                            confirmClear 
+                            ? 'bg-red-500 text-white border-red-600 shadow-md animate-pulse' 
+                            : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                        }`}
+                    >
+                        {confirmClear ? "确定删除?" : "清空"}
+                    </button>
+                )}
             </div>
 
-            {/* Content */}
-            <div className="p-4 max-w-3xl mx-auto min-h-[60vh]">
+            {/* 主内容 */}
+            <div className="p-4 max-w-lg mx-auto">
                 {menuItems.length === 0 && !isScanning && (
-                    <div className="flex flex-col items-center justify-center mt-24 text-center space-y-6 animate-fade-in">
-                        <div onClick={triggerFileInput} className="w-24 h-24 bg-white rounded-xl flex items-center justify-center border-2 border-gray-900 shadow-[6px_6px_0_0_#A1A1AA] cursor-pointer hover:shadow-[8px_8px_0_0_#71717A] transition-all group">
-                            <ImagePlus size={32} className="text-gray-600 group-hover:text-orange-500" />
+                    <div className="mt-20 text-center space-y-6">
+                        <div onClick={() => fileInputRef.current?.click()} className="w-24 h-24 mx-auto bg-white rounded-2xl border-2 border-dashed border-gray-300 flex items-center justify-center active:bg-gray-50 transition-colors">
+                            <ImagePlus size={40} className="text-gray-400" />
                         </div>
-                        <div>
-                            <h3 className="text-2xl font-bold text-gray-900">拍摄或上传菜单</h3>
-                            <p className="text-sm text-gray-600 mt-2">点击上方按钮，小 Qirl 为您翻译。</p>
-                        </div>
+                        <p className="text-gray-500 font-medium">点击上方图标，开始拍照翻译</p>
                     </div>
                 )}
 
-                <div className="space-y-10 pb-4">
-                    {categorizedItems.map(group => (
-                        <div key={group.category} className='animate-fade-in'>
-                            <div className="mb-6 pb-3 border-b-4 border-red-500/80">
-                                <h2 className="text-3xl font-black text-gray-900 tracking-tight flex items-center gap-2">
-                                    <ChefHat size={28} className="text-red-500"/> {cleanCategoryName(group.category)}
-                                </h2>
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                                {group.items.map((item) => (
-                                    <div key={item.id} className="group relative bg-white border-2 border-gray-900 rounded-xl overflow-hidden shadow-[8px_8px_0_0_#A1A1AA]">
-                                        <div className="bg-gradient-to-br from-amber-100 to-yellow-100 p-4 border-b-2 border-gray-900">
-                                            <h3 className="text-xl font-extrabold text-gray-900 mb-1">{item.translation}</h3>
-                                            <div className="text-sm text-gray-500 italic">{item.original}</div>
-                                            {item.pronunciation && <div className="text-xs text-indigo-600 font-bold mt-1 bg-white px-2 py-0.5 rounded-full inline-block border border-indigo-200">{item.pronunciation}</div>}
+                <div className="space-y-8">
+                    {Object.entries(grouped).map(([category, items]) => (
+                        <div key={category} className="animate-fade-in">
+                            <h3 className="text-lg font-black text-gray-900 mb-3 border-l-4 border-orange-500 pl-3">{cleanCategoryName(category)}</h3>
+                            <div className="grid gap-4">
+                                {items.map(item => (
+                                    <div key={item.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col gap-2">
+                                        <div className="flex justify-between items-start">
+                                            <div>
+                                                <h4 className="font-bold text-lg text-gray-900">{item.translation}</h4>
+                                                <p className="text-xs text-gray-400 font-mono mt-0.5">{item.original}</p>
+                                            </div>
+                                            <button onClick={() => handleSearchDish(item)} className="p-2 text-blue-500 bg-blue-50 rounded-full active:bg-blue-100">
+                                                <Search size={18} />
+                                            </button>
                                         </div>
-                                        <div className="p-4 space-y-3 bg-amber-50/70">
-                                            <p className="text-xs text-gray-700 line-clamp-3 border-l-2 border-orange-400 pl-2">{item.desc}</p>
-                                            <div className="flex justify-between items-center pt-2 border-t border-dashed border-gray-300">
-                                                <span className="text-2xl font-mono font-bold text-red-600">{item.currency}{item.price}</span>
-                                                <div className="flex gap-2">
-                                                    <button onClick={() => playAudio(item.original, item.lang_code)} className="w-8 h-8 rounded-lg bg-gray-100 border-2 border-gray-900 flex items-center justify-center"><Volume2 size={16}/></button>
-                                                    <button onClick={() => addToCart(item)} className="w-8 h-8 rounded-lg bg-orange-500 text-white border-2 border-gray-900 flex items-center justify-center"><Plus size={16}/></button>
-                                                </div>
+                                        <p className="text-sm text-gray-600 leading-relaxed bg-gray-50 p-2 rounded-lg">{item.desc}</p>
+                                        <div className="flex justify-between items-center mt-2">
+                                            <span className="text-xl font-bold text-orange-600">{item.currency}{item.price}</span>
+                                            <div className="flex gap-3">
+                                                <button onClick={() => playAudio(item.original, item.lang_code)} className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center active:bg-gray-200"><Volume2 size={20} className="text-gray-600"/></button>
+                                                <button onClick={() => addToCart(item)} className="w-10 h-10 rounded-full bg-orange-500 text-white flex items-center justify-center shadow-lg shadow-orange-200 active:scale-90 transition-transform"><Plus size={24}/></button>
                                             </div>
                                         </div>
                                     </div>
@@ -316,34 +290,53 @@ export default function AIMenuTranslator() {
                 </div>
             </div>
 
-            {/* Scanning Overlay */}
+            {/* 扫描加载中 */}
             {isScanning && (
-                <div className="fixed inset-0 z-50 bg-amber-50/95 flex flex-col items-center justify-center animate-fade-in">
-                    <Loader2 size={48} className="text-orange-500 animate-spin mb-4" />
-                    <h2 className="text-2xl font-bold text-gray-900">{scanStep}</h2>
+                <div className="fixed inset-0 z-50 bg-black/50 flex flex-col items-center justify-center text-white backdrop-blur-sm">
+                    <Loader2 size={48} className="animate-spin mb-4" />
+                    <p className="font-bold text-lg">{scanStep}</p>
                 </div>
             )}
 
-            {/* Cart Button */}
-            {totalCartItems > 0 && (
-                <button onClick={() => setShowCart(true)} className="fixed bottom-10 right-6 z-40 bg-white px-4 py-3 rounded-xl border-2 border-gray-900 shadow-[4px_4px_0_0_#444] flex items-center gap-3">
-                    <div className="relative">
-                        <ShoppingBag size={22} />
-                        <span className="absolute -top-2 -right-2 bg-red-600 text-white text-[10px] w-[18px] h-[18px] flex items-center justify-center rounded-full border border-white">{totalCartItems}</span>
-                    </div>
-                    <span className="font-black text-lg">{currencySymbol}{totalPrice}</span>
-                </button>
-            )}
-
-            {/* Toast */}
-            {toastMessage && (
-                <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[60] p-4 bg-white rounded-xl border-2 border-gray-900 shadow-[4px_4px_0_0_#444] animate-slide-down">
-                    <div className="flex items-center gap-2">
-                        <Zap size={20} className="text-orange-500" />
-                        <span className="font-bold">{toastMessage}</span>
-                    </div>
+            {/* 购物车按钮 (独立浮动) */}
+            {totalQty > 0 && !showCart && (
+                <div className="fixed bottom-8 right-4 left-4 z-40 animate-slide-up">
+                    <button 
+                        onClick={() => setShowCart(true)} 
+                        className="w-full bg-gray-900 text-white p-4 rounded-2xl shadow-2xl flex justify-between items-center active:scale-95 transition-transform border border-gray-700"
+                    >
+                        <div className="flex items-center gap-3">
+                            <div className="bg-orange-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shadow-md ring-2 ring-gray-900">{totalQty}</div>
+                            <span className="font-bold text-lg">去结算</span>
+                        </div>
+                        <span className="font-mono text-xl">{cartItems[0]?.currency}{totalPrice}</span>
+                    </button>
                 </div>
             )}
-        </div>
-    );
-}
+
+            {/* 购物车弹窗 (全屏遮罩 + 底部弹出) */}
+            {showCart && (
+                <div className="fixed inset-0 z-50 flex items-end justify-center">
+                    {/* 背景遮罩 (点击关闭) */}
+                    <div 
+                        className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in"
+                        onClick={() => setShowCart(false)}
+                    />
+                    
+                    {/* 弹窗内容 */}
+                    <div className="relative w-full max-w-lg bg-white rounded-t-3xl shadow-2xl animate-slide-up overflow-hidden flex flex-col max-h-[80vh]">
+                        {/* 标题栏 */}
+                        <div className="p-4 bg-gray-50 border-b flex justify-between items-center shrink-0">
+                            <h3 className="font-bold text-lg text-gray-800">当前订单</h3>
+                            <button 
+                                onClick={() => setShowCart(false)}
+                                className="p-2 bg-gray-200 rounded-full hover:bg-gray-300 transition-colors"
+                            >
+                                <X size={20} className="text-gray-600"/>
+                            </button>
+                        </div>
+
+                        {/* 列表区 (可滚动) */}
+                        <div className="p-4 overflow-y-auto flex-1 space-y-4">
+                            {cartItems.map(item => (
+                                <div key={item.menuItemId} className="flex justify-between items-center border-b border-gray-100 pb-3 last:border-0">
