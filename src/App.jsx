@@ -80,7 +80,7 @@ export default function AIMenuTranslator() {
         window.open(`https://www.bing.com/images/search?q=${encodeURIComponent(query)}`, '_blank');
     };
 
-    // 3. AI 识别 (Gemini 2.0 Flash Experimental)
+    // 3. AI 识别 (Gemini 1.5 Flash - 极速且稳定)
     const compressImage = (file) => {
         return new Promise((resolve) => {
             const reader = new FileReader();
@@ -110,25 +110,25 @@ export default function AIMenuTranslator() {
     const analyzeImageWithGemini = async (base64Image) => {
         const base64Data = base64Image.split(',')[1];
         
-        // Gemini 2.0 Flash 专用提示词
+        // ⚡️ 1.5 Flash 专用提示词
         const prompt = `
-            You are a Michelin-star food critic and translator. 
-            Analyze the menu image. Extract ALL dishes.
+            You are a professional menu translator. Analyze the menu image.
+            Extract ALL dishes. Return a JSON array.
             
-            Translate rules:
-            1. DO NOT translate literally (e.g., "Oyakodon" -> "Chicken and Egg Rice Bowl", NOT "Parent Child Bowl").
-            2. Use appetizing, professional Chinese (简体中文).
-            3. If the dish name is vague, describe the main ingredients based on the image visual context.
+            Rules:
+            1. Target Language: Simplified Chinese (简体中文).
+            2. Do NOT translate literally. Use appetizing names.
+            3. If currency is missing, assume Japanese Yen (¥).
 
             Return JSON array:
             [
               {
-                "original": "Dish Name in local language",
-                "translation": "Appetizing Chinese Name",
+                "original": "Dish Name",
+                "translation": "Chinese Name",
                 "pronunciation": "Pronunciation",
                 "price": 100,
                 "currency": "¥",
-                "desc": "One sentence description of taste/ingredients in Chinese",
+                "desc": "Short description",
                 "category": "Category (e.g. 主菜)",
                 "lang_code": "ja-JP"
               }
@@ -137,9 +137,9 @@ export default function AIMenuTranslator() {
         `;
 
         try {
-            // ✅ 使用 gemini-2.0-flash-exp (速度最快)
+            // ✅ 改用 gemini-1.5-flash，这是最稳的版本，不会出现 404
             const response = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`,
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
                 {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -175,7 +175,7 @@ export default function AIMenuTranslator() {
         const files = Array.from(e.target.files);
         if (files.length === 0) return;
         setIsScanning(true);
-        setScanStep(`正在呼叫 Gemini 2.0...`); 
+        setScanStep(`正在极速识别...`); 
         try {
             for (let i = 0; i < files.length; i++) {
                 const file = files[i];
@@ -361,30 +361,3 @@ export default function AIMenuTranslator() {
                                     <div className="flex items-center gap-3 bg-white border-2 border-gray-900 rounded-lg p-1 shadow-[2px_2px_0_0_#ccc]">
                                         <button onClick={() => removeFromCart(item.menuItemId)} className="w-6 h-6 flex items-center justify-center bg-gray-100 rounded hover:bg-gray-200"><Minus size={14}/></button>
                                         <span className="font-mono font-bold w-6 text-center">{item.quantity}</span>
-                                        <button onClick={() => addToCart(item)} className="w-6 h-6 flex items-center justify-center bg-orange-100 text-orange-600 rounded hover:bg-orange-200"><Plus size={14}/></button>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                        <div className="p-4 border-t-2 border-gray-900 bg-white shrink-0">
-                            <button 
-                                onClick={() => {setShowCart(false); alert("下单成功！");}} 
-                                className="w-full bg-gradient-to-r from-orange-500 to-red-600 text-white font-bold py-3 rounded-xl border-2 border-gray-900 shadow-[3px_3px_0_0_#444] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none text-lg"
-                            >
-                                确认下单 · {cartItems[0]?.currency}{totalPrice}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Toast */}
-            {toastMessage && (
-                <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[110] px-4 py-2 bg-white border-2 border-gray-900 shadow-[4px_4px_0_0_#000] rounded-full flex items-center gap-2 animate-slide-down">
-                    <Zap size={16} className="text-orange-500 fill-orange-500"/>
-                    <span className="font-bold text-sm">{toastMessage}</span>
-                </div>
-            )}
-        </div>
-    );
-}
